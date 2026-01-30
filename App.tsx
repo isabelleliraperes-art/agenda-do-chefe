@@ -22,6 +22,14 @@ const App: React.FC = () => {
   const [pendingNotifications, setPendingNotifications] = useState<string[]>([]);
   const notifiedEventsRef = useRef<Set<string>>(new Set());
 
+  // Efeito para aplicar o Zoom no Root do Documento (fazendo o Tailwind escalar tudo via rem)
+  useEffect(() => {
+    const root = document.documentElement;
+    if (zoomLevel === 'small') root.style.fontSize = '13px';
+    else if (zoomLevel === 'large') root.style.fontSize = '19px';
+    else root.style.fontSize = '16px';
+  }, [zoomLevel]);
+
   useEffect(() => {
     const saved = localStorage.getItem('ciap_boss_agenda_v6');
     if (saved) {
@@ -108,7 +116,12 @@ const App: React.FC = () => {
       meetings: events.filter(e => e.type === 'meeting').length,
       cancelled: events.filter(e => e.status === 'cancelled').length,
       completed: events.filter(e => e.status === 'completed').length,
+      pending: events.filter(e => e.status === 'pending').length,
     };
+  }, [events]);
+
+  const pendingEvents = useMemo(() => {
+    return events.filter(e => e.status === 'pending');
   }, [events]);
 
   const openDetail = (event: CalendarEvent) => {
@@ -151,18 +164,35 @@ const App: React.FC = () => {
     }
   };
 
-  const handleToggleTask = (eventId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleUpdateStatus = (eventId: string, status: EventStatus) => {
     setEvents(prev => prev.map(event => {
-      if (event.id === eventId && event.type === 'task') {
-        return { ...event, status: event.status === 'completed' ? 'active' : 'completed' };
+      if (event.id === eventId) {
+        const updated = { ...event, status };
+        if (selectedEvent?.id === eventId) setSelectedEvent(updated);
+        return updated;
       }
       return event;
     }));
   };
 
+  const handleToggleTask = (eventId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const targetEvent = events.find(ev => ev.id === eventId);
+    if (targetEvent?.type === 'task') {
+      handleUpdateStatus(eventId, targetEvent.status === 'completed' ? 'active' : 'completed');
+    }
+  };
+
+  const handleDeleteEvent = (eventId: string) => {
+    if (window.confirm("Tem certeza que deseja excluir este compromisso permanentemente?")) {
+      setEvents(events.filter(e => e.id !== eventId));
+      setIsDetailModalOpen(false);
+      setSelectedEvent(null);
+    }
+  };
+
   const handleShareWhatsApp = (event: CalendarEvent) => {
-    const text = `📢 *CIAP PM/PA - Agenda Chefia*\n🗓️ *Evento:* ${event.title}\n📅 *Data:* ${formatDate(event.start)}\n⏰ *Hora:* ${formatTime(event.start)}\n👤 *Responsável:* ${event.responsible}\n👥 *Participantes:* ${event.participants.join(', ')}\n📝 *Descrição:* ${event.description || 'Sem descrição.'}\n✍️ *Registrado por:* ${event.createdBy}`;
+    const text = `📢 *CIAP PM/PA - Agenda Chefia*\n🗓️ *Evento:* ${event.title}\n📅 *Data:* ${formatDate(event.start)}\n⏰ *Hora:* ${formatTime(event.start)}\n👤 *Responsável:* ${event.responsible}\n👥 *Participantes:* ${event.participants.join(', ')}\n📝 *Descrição:* ${event.description || 'Sem descrição.'}\n✍️ *Registrado por:* ${event.createdBy}\n🚩 *Status:* ${event.status.toUpperCase()}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     notifiedEventsRef.current.add(event.id);
     setPendingNotifications(prev => prev.filter(id => id !== event.id));
@@ -200,18 +230,11 @@ const App: React.FC = () => {
     </div>
   );
 
-  const zoomClasses = {
-    small: 'zoom-small',
-    medium: 'zoom-medium',
-    large: 'zoom-large'
-  };
-
   return (
-    <div className={`flex h-screen overflow-hidden bg-[#f0f2f5] text-slate-800 font-sans selection:bg-blue-100 zoom-transition ${zoomClasses[zoomLevel]}`}>
+    <div className={`flex h-screen overflow-hidden bg-[#f0f2f5] text-slate-800 font-sans selection:bg-blue-100 zoom-transition`}>
       <aside className="w-[18rem] bg-white border-r border-slate-200 p-4 flex flex-col gap-4 shadow-sm z-20 overflow-y-auto">
         <CIAPBrasaoOficial />
 
-        {/* Controle de Zoom Proporcional */}
         <div className="space-y-2">
             <h3 className="text-[8px] font-bold uppercase text-slate-400 px-3 tracking-widest opacity-50">Escala de Interface</h3>
             <div className="bg-slate-100 p-1 rounded-xl flex gap-1 border border-slate-200">
@@ -256,7 +279,38 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <nav className="flex flex-col gap-1 mt-2">
+        {/* Quadro de Pendências (Waiting Board) */}
+        <div className="flex-1 flex flex-col min-h-0">
+          <h3 className="text-[8px] font-bold uppercase text-slate-400 mb-2 px-3 tracking-widest opacity-50 flex justify-between items-center">
+            <span>Quadro de Espera</span>
+            <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-[7px]">{pendingEvents.length}</span>
+          </h3>
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            {pendingEvents.length === 0 ? (
+              <div className="px-3 py-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 text-center">
+                <p className="text-[9px] text-slate-400 font-medium italic">Nenhuma pendência.</p>
+              </div>
+            ) : (
+              pendingEvents.map(e => (
+                <div key={e.id} onClick={() => openDetail(e)}
+                  className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-amber-400 transition-all group relative border-l-4 border-l-amber-400">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs">{e.emoji}</span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-slate-800 leading-tight truncate group-hover:text-amber-700">{e.title}</p>
+                      <p className="text-[8px] text-slate-400 uppercase font-semibold mt-0.5 truncate">{e.responsible}</p>
+                    </div>
+                  </div>
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-[8px]">🔍</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <nav className="flex flex-col gap-1 mt-4">
             <h3 className="text-[8px] font-bold uppercase text-slate-400 mb-2 px-3 tracking-widest opacity-50">Navegação</h3>
             {[
                 { id: 'month', label: 'Mensal', icon: '📅' },
@@ -347,12 +401,20 @@ const App: React.FC = () => {
             <div className="p-8">
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-md bg-gradient-to-br ${selectedEvent.color} text-white`}>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-md bg-gradient-to-br ${selectedEvent.color} text-white ${selectedEvent.status === 'pending' ? 'ring-4 ring-amber-400 ring-offset-2' : ''}`}>
                     {selectedEvent.status === 'completed' ? '✔️' : selectedEvent.emoji}
                   </div>
                   <div>
-                    <h3 className={`text-xl font-bold tracking-tight ${selectedEvent.status === 'completed' ? 'line-through opacity-40' : ''}`}>{selectedEvent.title}</h3>
-                    <span className="text-[9px] font-bold px-3 py-1 bg-slate-100 rounded-full uppercase tracking-wider text-slate-500">{selectedEvent.type}</span>
+                    <h3 className={`text-xl font-bold tracking-tight ${selectedEvent.status === 'completed' ? 'line-through opacity-40' : ''} ${selectedEvent.status === 'pending' ? 'text-amber-800' : ''}`}>{selectedEvent.title}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[9px] font-bold px-3 py-1 bg-slate-100 rounded-full uppercase tracking-wider text-slate-500">{selectedEvent.type}</span>
+                      <span className={`text-[9px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${
+                        selectedEvent.status === 'pending' ? 'bg-amber-100 text-amber-700' : 
+                        selectedEvent.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {selectedEvent.status === 'pending' ? 'Em Espera' : selectedEvent.status}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <button onClick={() => setIsDetailModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-all">
@@ -378,17 +440,37 @@ const App: React.FC = () => {
                 </div>
               </div>
 
+              <div className="mb-8">
+                <p className="text-[8px] font-bold uppercase text-slate-400 tracking-widest mb-3">Alterar Status</p>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => handleUpdateStatus(selectedEvent.id, 'active')}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all ${selectedEvent.status === 'active' ? 'bg-blue-900 text-white border-blue-900 shadow-md scale-105' : 'bg-white text-slate-400 border-slate-200 hover:border-blue-200'}`}>
+                    Ativo
+                  </button>
+                  <button onClick={() => handleUpdateStatus(selectedEvent.id, 'pending')}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all ${selectedEvent.status === 'pending' ? 'bg-amber-500 text-white border-amber-500 shadow-md scale-105' : 'bg-white text-slate-400 border-slate-200 hover:border-amber-200'}`}>
+                    Em Espera
+                  </button>
+                  <button onClick={() => handleUpdateStatus(selectedEvent.id, 'completed')}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all ${selectedEvent.status === 'completed' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md scale-105' : 'bg-white text-slate-400 border-slate-200 hover:border-emerald-200'}`}>
+                    Concluído
+                  </button>
+                  <button onClick={() => handleUpdateStatus(selectedEvent.id, 'cancelled')}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all ${selectedEvent.status === 'cancelled' ? 'bg-red-600 text-white border-red-600 shadow-md scale-105' : 'bg-white text-slate-400 border-slate-200 hover:border-red-200'}`}>
+                    Cancelado
+                  </button>
+                </div>
+              </div>
+
               <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
                 <button onClick={() => handleShareWhatsApp(selectedEvent)}
                     className="px-4 py-2 text-[10px] font-bold uppercase bg-[#25D366] text-white rounded-lg hover:brightness-105 transition-all flex items-center gap-2">
                     <span>📲</span> Compartilhar
                 </button>
-                {selectedEvent.type === 'task' && (
-                  <button onClick={(e) => handleToggleTask(selectedEvent.id, e as any)}
-                    className="px-4 py-2 text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors">
-                    {selectedEvent.status === 'completed' ? 'Reabrir' : 'Concluir'}
-                  </button>
-                )}
+                <button onClick={() => handleDeleteEvent(selectedEvent.id)}
+                    className="px-4 py-2 text-[10px] font-bold uppercase bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2">
+                    <span>🗑️</span> Excluir
+                </button>
                 <button onClick={() => setIsDetailModalOpen(false)}
                     className="px-6 py-2 text-[10px] font-bold uppercase bg-slate-900 text-white rounded-lg hover:bg-black transition-colors">
                     Fechar
@@ -430,7 +512,7 @@ const Dashboard: React.FC<{ stats: any, role: string }> = ({ stats, role }) => (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
                 { label: 'Total Ativos', value: stats.total - stats.cancelled, color: role === 'chefe' ? 'bg-slate-900' : 'bg-blue-900' },
-                { label: 'Em Aberto', value: stats.total - stats.completed - stats.cancelled, color: 'bg-indigo-700' },
+                { label: 'Em Espera', value: stats.pending, color: 'bg-amber-500' },
                 { label: 'Concluídos', value: stats.completed, color: 'bg-emerald-600' },
                 { label: 'Cancelados', value: stats.cancelled, color: 'bg-red-600' }
             ].map((s, i) => (
@@ -472,9 +554,12 @@ const MonthView: React.FC<{ date: Date; events: CalendarEvent[]; onEventClick: (
               <div className="space-y-1">
                 {dayEvents.slice(0, 3).map(e => (
                   <div key={e.id} onClick={() => onEventClick(e)}
-                    className={`cursor-pointer px-2 py-1 rounded-md text-[8px] font-bold flex items-center gap-2 bg-gradient-to-r ${e.color} text-white truncate shadow-sm hover:brightness-110 transition-all ${e.status === 'completed' ? 'opacity-40 line-through' : ''}`}>
+                    className={`cursor-pointer px-2 py-1 rounded-md text-[8px] font-bold flex items-center gap-2 bg-gradient-to-r ${e.color} text-white truncate shadow-sm hover:brightness-110 transition-all 
+                      ${e.status === 'completed' ? 'opacity-40 line-through' : ''} 
+                      ${e.status === 'pending' ? 'opacity-70 border border-dashed border-white/50 ring-1 ring-amber-400/30 shadow-inner' : ''}
+                      ${e.status === 'cancelled' ? 'opacity-20 grayscale scale-95' : ''}`}>
                     {e.type === 'task' && <div onClick={(evt) => onToggleTask(e.id, evt)} className="w-2.5 h-2.5 rounded bg-white/20 border border-white/40"></div>}
-                    <span className="truncate">{e.title}</span>
+                    <span className="truncate">{e.status === 'pending' ? '⌛ ' : ''}{e.title}</span>
                   </div>
                 ))}
               </div>
@@ -510,8 +595,11 @@ const WeekView: React.FC<{ date: Date; events: CalendarEvent[]; onEventClick: (e
                                 <div key={i} className="flex-1 border-r border-slate-50 p-1 flex flex-col gap-1">
                                     {hourEvents.map(e => (
                                         <div key={e.id} onClick={() => onEventClick(e)}
-                                          className={`cursor-pointer p-2 rounded-lg text-[8px] font-bold bg-gradient-to-r ${e.color} text-white shadow-sm flex flex-col justify-between hover:brightness-110 transition-all ${e.status === 'completed' ? 'opacity-40' : ''}`}>
-                                            <span className={`truncate ${e.status === 'completed' ? 'line-through' : ''}`}>{e.title}</span>
+                                          className={`cursor-pointer p-2 rounded-lg text-[8px] font-bold bg-gradient-to-r ${e.color} text-white shadow-sm flex flex-col justify-between hover:brightness-110 transition-all 
+                                            ${e.status === 'completed' ? 'opacity-40' : ''}
+                                            ${e.status === 'pending' ? 'opacity-70 border border-dashed border-white/50 ring-1 ring-amber-400/30' : ''}
+                                            ${e.status === 'cancelled' ? 'opacity-20 grayscale' : ''}`}>
+                                            <span className={`truncate ${e.status === 'completed' ? 'line-through' : ''}`}>{e.status === 'pending' ? '⌛ ' : ''}{e.title}</span>
                                             <span className="opacity-70 text-[7px] mt-1">{formatTime(e.start)}</span>
                                         </div>
                                     ))}

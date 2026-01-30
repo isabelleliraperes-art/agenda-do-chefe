@@ -1,6 +1,6 @@
 
 export type EventType = 'meeting' | 'lecture' | 'event' | 'task' | 'ceremony';
-export type EventStatus = 'active' | 'cancelled' | 'rescheduled' | 'completed';
+export type EventStatus = 'active' | 'cancelled' | 'rescheduled' | 'completed' | 'pending';
 export type UserRole = 'chefe' | 'secretaria';
 
 export interface CalendarEvent {
