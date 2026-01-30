@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { SmartAddResult } from "../types";
 
-// Always use the named parameter and process.env.API_KEY directly as per guidelines
+// Inicialização utilizando o padrão de parâmetro nomeado obrigatório
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export async function parseEventDescription(text: string, referenceDate: Date): Promise<SmartAddResult | null> {
@@ -35,7 +35,7 @@ export async function parseEventDescription(text: string, referenceDate: Date): 
       }
     });
 
-    // Access the .text property directly (not as a method)
+    // Acesso direto à propriedade .text conforme as diretrizes
     const jsonStr = response.text?.trim();
     if (!jsonStr) return null;
     return JSON.parse(jsonStr) as SmartAddResult;
